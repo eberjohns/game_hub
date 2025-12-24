@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Admin Control</title>
+    <script src="/socket.io/socket.io.js"></script>
+    <style>
+        body { font-family: monospace; padding: 20px; background: #eee; }
+        .panel { border: 1px solid #ccc; padding: 20px; background: white; margin-bottom: 20px; }
+        button { padding: 10px 20px; cursor: pointer; }
+        #playerList { display: flex; flex-wrap: wrap; gap: 10px; }
+        .player-chip { background: #ddd; padding: 5px 10px; border-radius: 15px; }
+    </style>
+</head>
+<body>
+    <h1>👨‍💻 Admin Control Center</h1>
+    
+    <div id="setup" class="panel">
+        <h3>1. Create Room</h3>
+        <input type="text" id="gameUrl" value="https://example-game-vercel.app" style="width: 300px;">
+        <button onclick="createRoom()">Generate PIN</button>
+    </div>
+
+    <div id="controls" class="panel" style="display:none;">
+        <h2 style="font-size: 3rem; margin: 0;">PIN: <span id="pinDisplay">----</span></h2>
+        <hr>
+        <button onclick="lockRoom()">🔒 Lock Joining</button>
+        <button onclick="startGame()" style="background: green; color: white;">▶ START GAME</button>
+        <button onclick="endGame()" style="background: red; color: white;">⏹ END SESSION</button>
+        
+        <h3>Players (<span id="count">0</span>)</h3>
+        <div id="playerList"></div>
+    </div>
+
+    <div id="liveView" class="panel">
+        <h3>🏆 Live Leaderboard</h3>
+        <ul id="liveBoard"></ul>
+    </div>
+
+    <script>
+        const socket = io();
+        let currentPin = null;
+
+        function createRoom() {
+            const url = document.getElementById('gameUrl').value;
+            socket.emit('admin_create_room', url);
+        }
+
+        socket.on('room_created', (pin) => {
+            currentPin = pin;
+            document.getElementById('setup').style.display = 'none';
+            document.getElementById('controls').style.display = 'block';
+            document.getElementById('pinDisplay').innerText = pin;
+        });
+
+        function lockRoom() {
+            socket.emit('admin_lock_room', currentPin);
+            alert("Room Locked!");
+        }
+
+        function startGame() {
+            if(confirm("Start game on all devices?")) {
+                socket.emit('admin_start_game', currentPin);
+            }
+        }
+
+        function endGame() {
+            socket.emit('admin_end_game', currentPin);
+        }
+
+        socket.on('update_player_list', (players) => {
+            document.getElementById('count').innerText = players.length;
+            const div = document.getElementById('playerList');
+            div.innerHTML = players.map(p => `<span class="player-chip">${p.name}</span>`).join('');
+        });
+
+        socket.on('live_leaderboard', (list) => {
+            const ul = document.getElementById('liveBoard');
+            ul.innerHTML = list.map(p => `<li>${p.name}: ${p.score}</li>`).join('');
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Fest Game Hub</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <script src="/socket.io/socket.io.js"></script>
+    <style>
+        body { font-family: sans-serif; text-align: center; margin: 0; background: #1a1a1a; color: white; }
+        .screen { display: none; height: 100vh; padding: 20px; box-sizing: border-box; }
+        .active { display: flex; flex-direction: column; justify-content: center; align-items: center; }
+        input { padding: 15px; font-size: 1.2rem; margin: 10px 0; width: 80%; border-radius: 8px; border: none;}
+        button { padding: 15px 30px; font-size: 1.2rem; background: #ff0055; color: white; border: none; border-radius: 8px; cursor: pointer; }
+        iframe { width: 100%; height: 100%; border: none; position: absolute; top: 0; left: 0; z-index: 10; }
+        #game-screen { padding: 0; }
+        .leaderboard-row { display: flex; justify-content: space-between; width: 100%; padding: 10px; background: #333; margin: 5px 0; }
+    </style>
+</head>
+<body>
+
+    <div id="login-screen" class="screen active">
+        <h1>🚀 TechnoFest Hub</h1>
+        <input type="number" id="pinInput" placeholder="Game PIN">
+        <input type="text" id="nameInput" placeholder="Your Nickname">
+        <button onclick="joinGame()">Join Room</button>
+        <p id="errorMsg" style="color: red;"></p>
+    </div>
+
+    <div id="lobby-screen" class="screen">
+        <h2>Waiting for Host...</h2>
+        <p>Welcome, <span id="playerNameDisplay"></span>!</p>
+        <p id="lockStatus">Room is Open</p>
+        <div class="loader">⏳</div>
+    </div>
+
+    <div id="game-screen" class="screen">
+        </div>
+
+    <div id="result-screen" class="screen">
+        <h1>Game Over!</h1>
+        <h2>Your Score: <span id="myScore">0</span></h2>
+        <h3>Top Players</h3>
+        <div id="leaderboardList"></div>
+    </div>
+
+    <script>
+        const socket = io();
+        let myPin = null;
+
+        function joinGame() {
+            const pin = document.getElementById('pinInput').value;
+            const username = document.getElementById('nameInput').value;
+            if(!pin || !username) return alert("Fill all fields");
+
+            socket.emit('player_join', { pin, username });
+        }
+
+        // --- SOCKET LISTENERS ---
+
+        socket.on('join_success', (data) => {
+            myPin = data.pin;
+            document.getElementById('playerNameDisplay').innerText = data.username;
+            switchScreen('lobby-screen');
+        });
+
+        socket.on('error_msg', (msg) => {
+            document.getElementById('errorMsg').innerText = msg;
+        });
+
+        socket.on('room_locked_status', (isLocked) => {
+            document.getElementById('lockStatus').innerText = isLocked ? "🔒 Room Locked (Be ready!)" : "Room Open";
+        });
+
+        socket.on('game_start', (url) => {
+            switchScreen('game-screen');
+            const iframe = document.createElement('iframe');
+            iframe.src = url;
+            iframe.allow = "autoplay";
+            document.getElementById('game-screen').appendChild(iframe);
+        });
+
+        socket.on('score_received', (score) => {
+            // Server confirmed our score
+            document.getElementById('myScore').innerText = score;
+            // Remove game
+            document.getElementById('game-screen').innerHTML = ''; 
+            switchScreen('result-screen');
+        });
+
+        socket.on('game_ended', (leaderboard) => {
+            // If admin ends game manually, show leaderboard
+            updateLeaderboardUI(leaderboard);
+            switchScreen('result-screen');
+        });
+
+        // --- SDK COMMUNICATION (LISTENER) ---
+        window.addEventListener('message', (event) => {
+            if (event.data.type === 'GAME_OVER') {
+                const finalScore = event.data.payload.score;
+                console.log("Game finished. Score:", finalScore);
+                socket.emit('submit_score', { pin: myPin, score: finalScore });
+            }
+        });
+
+        function switchScreen(id) {
+            document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+            document.getElementById(id).classList.add('active');
+        }
+
+        function updateLeaderboardUI(list) {
+            const container = document.getElementById('leaderboardList');
+            container.innerHTML = '';
+            list.slice(0, 5).forEach((p, index) => {
+                const div = document.createElement('div');
+                div.className = 'leaderboard-row';
+                div.innerHTML = `<span>#${index+1} ${p.name}</span> <span>${p.score}</span>`;
+                container.appendChild(div);
+            });
+        }
+    </script>
+</body>
+</html>
