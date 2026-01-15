@@ -2,7 +2,6 @@
 <html>
 <head>
     <title>Fest Game Hub</title>
-    <link rel="icon" href="./icon.png" type="image/x-icon">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <script src="/socket.io/socket.io.js"></script>
     <style>
@@ -29,12 +28,11 @@
     <div id="lobby-screen" class="screen">
         <h2>Waiting for Host...</h2>
         <p>Welcome, <span id="playerNameDisplay"></span>!</p>
-        <p id="lockStatus">Room is Open</p>
         <div class="loader">⏳</div>
+        <p style="font-size:0.8rem; color:#aaa; margin-top:20px;">Keep this tab open!</p>
     </div>
 
-    <div id="game-screen" class="screen">
-        </div>
+    <div id="game-screen" class="screen"></div>
 
     <div id="result-screen" class="screen">
         <h1>Game Over!</h1>
@@ -46,19 +44,29 @@
     <script>
         const socket = io();
         let myPin = null;
+        let myName = null;
+
+        // FIX: Wake up logic for mobile tabs
+        document.addEventListener("visibilitychange", () => {
+            if (document.visibilityState === 'visible' && myPin && myName) {
+                console.log("Tab woke up. Re-syncing...");
+                socket.emit('player_join', { pin: myPin, username: myName });
+            }
+        });
 
         function joinGame() {
             const pin = document.getElementById('pinInput').value;
             const username = document.getElementById('nameInput').value;
             if(!pin || !username) return alert("Fill all fields");
+            
+            // Save locally so we can rejoin if tab closes/refreshes
+            myPin = pin; 
+            myName = username;
 
             socket.emit('player_join', { pin, username });
         }
 
-        // --- SOCKET LISTENERS ---
-
         socket.on('join_success', (data) => {
-            myPin = data.pin;
             document.getElementById('playerNameDisplay').innerText = data.username;
             switchScreen('lobby-screen');
         });
@@ -67,38 +75,34 @@
             document.getElementById('errorMsg').innerText = msg;
         });
 
-        socket.on('room_locked_status', (isLocked) => {
-            document.getElementById('lockStatus').innerText = isLocked ? "🔒 Room Locked (Be ready!)" : "Room Open";
-        });
-
         socket.on('game_start', (url) => {
             switchScreen('game-screen');
-            const iframe = document.createElement('iframe');
-            iframe.src = url;
-            iframe.allow = "autoplay";
-            document.getElementById('game-screen').appendChild(iframe);
+            // Prevent double-loading iframe
+            const container = document.getElementById('game-screen');
+            if(container.innerHTML === '') {
+                const iframe = document.createElement('iframe');
+                iframe.src = url;
+                iframe.allow = "autoplay";
+                container.appendChild(iframe);
+            }
         });
 
         socket.on('score_received', (score) => {
-            // Server confirmed our score
             document.getElementById('myScore').innerText = score;
-            // Remove game
-            document.getElementById('game-screen').innerHTML = ''; 
+            document.getElementById('game-screen').innerHTML = ''; // Kill game
             switchScreen('result-screen');
         });
 
         socket.on('game_ended', (leaderboard) => {
-            // If admin ends game manually, show leaderboard
             updateLeaderboardUI(leaderboard);
+            document.getElementById('game-screen').innerHTML = ''; 
             switchScreen('result-screen');
         });
 
-        // --- SDK COMMUNICATION (LISTENER) ---
+        // SDK Communication
         window.addEventListener('message', (event) => {
             if (event.data.type === 'GAME_OVER') {
-                const finalScore = event.data.payload.score;
-                console.log("Game finished. Score:", finalScore);
-                socket.emit('submit_score', { pin: myPin, score: finalScore });
+                socket.emit('submit_score', { pin: myPin, score: event.data.payload.score });
             }
         });
 
