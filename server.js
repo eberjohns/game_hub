@@ -1,6 +1,21 @@
+        // ==============================
+        // 📊 LEADERBOARD EVENTS
+        // ==============================
+
+        socket.on('get_leaderboard', (pin, callback) => {
+            // Load leaderboard from file for this room
+            const leaderboard = loadLeaderboardFromFile(pin);
+            if (typeof callback === 'function') {
+                callback(leaderboard);
+            } else {
+                socket.emit('leaderboard_data', leaderboard);
+            }
+        });
 const express = require('express');
 const http = require('http');
 const { Server } = require("socket.io");
+const fs = require('fs');
+const path = require('path');
 
 const app = express();
 const server = http.createServer(app);
@@ -11,7 +26,32 @@ const io = new Server(server, {
 app.use(express.static('public'));
 
 // --- DATA STORE ---
-let rooms = {}; 
+
+let rooms = {};
+// Get leaderboard file path for a room PIN
+function getLeaderboardFile(pin) {
+    return path.join(__dirname, `leaderboard_${pin}.txt`);
+}
+
+// Load leaderboard from file for a room PIN
+function loadLeaderboardFromFile(pin) {
+    const leaderboardFile = getLeaderboardFile(pin);
+    if (!fs.existsSync(leaderboardFile)) return [];
+    const lines = fs.readFileSync(leaderboardFile, 'utf-8').split('\n').filter(Boolean);
+    return lines
+        .filter(line => !line.startsWith('#'))
+        .map(line => {
+            const [name, score] = line.split(',');
+            return { name, score: Number(score) };
+        });
+}
+
+// Save leaderboard to file for a room PIN
+function saveLeaderboardToFile(pin, leaderboard) {
+    const leaderboardFile = getLeaderboardFile(pin);
+    const lines = leaderboard.map(entry => `${entry.name},${entry.score}`);
+    fs.writeFileSync(leaderboardFile, lines.join('\n'));
+}
 
 io.on('connection', (socket) => {
     console.log('New connection:', socket.id);
@@ -40,13 +80,17 @@ io.on('connection', (socket) => {
             console.log(`Admin reclaiming room ${pin}`);
             rooms[pin].adminSocket = socket.id;
             socket.join(pin);
-            
+
+            // Load leaderboard from file for this room
+            const leaderboard = loadLeaderboardFromFile(pin);
+
             // Send back state so Admin UI updates
             socket.emit('admin_restore_success', {
                 pin: pin,
                 status: rooms[pin].status,
                 gameUrl: rooms[pin].gameUrl,
-                players: getPlayerList(pin)
+                players: getPlayerList(pin),
+                leaderboard: leaderboard
             });
         } else {
             socket.emit('error_msg', "Session expired. Create new room.");
@@ -68,10 +112,13 @@ io.on('connection', (socket) => {
         }
     });
 
+
     socket.on('admin_end_game', (pin) => {
         if (rooms[pin]) {
             rooms[pin].status = "ENDED";
             const leaderboard = getLeaderboard(pin);
+            // Save leaderboard to file for persistence
+            saveLeaderboardToFile(pin, leaderboard);
             io.to(pin).emit('game_ended', leaderboard);
         }
     });
@@ -118,6 +165,7 @@ io.on('connection', (socket) => {
         }
     });
 
+
     socket.on('submit_score', ({ pin, score }) => {
         const room = rooms[pin];
         if (!room || !room.players[socket.id]) return;
@@ -126,12 +174,16 @@ io.on('connection', (socket) => {
         if (room.players[socket.id].score === null) {
             console.log(`Score received: ${score} from ${room.players[socket.id].name}`);
             room.players[socket.id].score = score;
-            
+
             // Confirm to player
             socket.emit('score_received', score);
-            
+
             // Live Update Admin
-            io.to(room.adminSocket).emit('live_leaderboard', getLeaderboard(pin));
+            const leaderboard = getLeaderboard(pin);
+            io.to(room.adminSocket).emit('live_leaderboard', leaderboard);
+
+            // Save leaderboard to file for persistence
+            saveLeaderboardToFile(pin, leaderboard);
         }
     });
 });
@@ -149,6 +201,10 @@ function getLeaderboard(pin) {
         .filter(p => p.score !== null)
         .sort((a, b) => b.score - a.score);
 }
+
+
+// Optionally, load leaderboard on server start (for global leaderboard)
+// const persistentLeaderboard = loadLeaderboardFromFile();
 
 server.listen(3000, () => {
     console.log('✅ Server running on port 3000');

@@ -57,7 +57,21 @@
             showControls(data.pin);
             document.getElementById('statusDisplay').innerText = data.status;
             updatePlayerUI(data.players);
+            // Request leaderboard for this room
+            requestLeaderboard(currentPin);
         });
+        // Request leaderboard for the current room
+        function requestLeaderboard(pin) {
+            socket.emit('get_leaderboard', pin, (list) => {
+                updateLeaderboardUI(list);
+            });
+        }
+
+        // Update leaderboard UI
+        function updateLeaderboardUI(list) {
+            const ul = document.getElementById('liveBoard');
+            ul.innerHTML = list.map(p => `<li><b>${p.name}</b>: ${p.score}</li>`).join('');
+        }
 
         function createRoom() {
             const url = document.getElementById('gameUrl').value;
@@ -69,6 +83,8 @@
             currentPin = pin;
             sessionStorage.setItem('admin_pin', pin); // Save for refresh
             showControls(pin);
+            // Request leaderboard for this room
+            requestLeaderboard(currentPin);
         });
 
         function showControls(pin) {
@@ -105,8 +121,7 @@
         }
 
         socket.on('live_leaderboard', (list) => {
-            const ul = document.getElementById('liveBoard');
-            ul.innerHTML = list.map(p => `<li><b>${p.name}</b>: ${p.score}</li>`).join('');
+            updateLeaderboardUI(list);
         });
     </script>
 </body>
