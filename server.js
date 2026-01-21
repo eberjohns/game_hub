@@ -1,16 +1,4 @@
-        // ==============================
-        // 📊 LEADERBOARD EVENTS
-        // ==============================
-
-        socket.on('get_leaderboard', (pin, callback) => {
-            // Load leaderboard from file for this room
-            const leaderboard = loadLeaderboardFromFile(pin);
-            if (typeof callback === 'function') {
-                callback(leaderboard);
-            } else {
-                socket.emit('leaderboard_data', leaderboard);
-            }
-        });
+// ...existing code...
 const express = require('express');
 const http = require('http');
 const { Server } = require("socket.io");
